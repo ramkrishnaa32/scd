@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
+from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 from urllib.parse import quote_plus
 import pandas as pd
@@ -28,7 +29,9 @@ def read_table(engine, table_name):
 
 def load_to_postgres_transactional(df, table_name, engine, schema=None):
     """
-    Load DataFrame to PostgreSQL within a transaction. Rolls back if any error occurs.
+    Truncate and load DataFrame to PostgreSQL within a transaction.
+    Rolls back if any error occurs.
+
     Parameters:
         df (pd.DataFrame): Data to be loaded.
         table_name (str): Target table name.
@@ -39,6 +42,9 @@ def load_to_postgres_transactional(df, table_name, engine, schema=None):
     trans = connection.begin()
 
     try:
+        full_table = f"{schema}.{table_name}" if schema else table_name
+        connection.execute(text(f"TRUNCATE TABLE {full_table} RESTART IDENTITY CASCADE"))
+
         df.to_sql(
             name=table_name,
             con=connection,
@@ -49,12 +55,13 @@ def load_to_postgres_transactional(df, table_name, engine, schema=None):
             chunksize=1000
         )
         trans.commit()
-        print(f"Successfully loaded {len(df)} records into {table_name}")
+        print(f"Successfully truncated and loaded {len(df)} records into {full_table}")
     except Exception as error:
         trans.rollback()
         print("Transaction rolled back due to error:", error)
     finally:
         connection.close()
+
 
 def enhance_customers_df(df: pd.DataFrame) -> pd.DataFrame:
     """
